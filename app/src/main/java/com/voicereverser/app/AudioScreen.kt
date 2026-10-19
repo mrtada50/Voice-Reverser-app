@@ -63,24 +63,6 @@ fun AudioScreen(vm: MainViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            val phrase = vm.challenge
-            if (phrase != null) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3D6))
-                ) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("التحدي", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text(phrase, fontSize = 20.sp)
-                        }
-                        IconButton(onClick = { vm.challenge = null }) {
-                            Icon(Icons.Filled.Close, null)
-                        }
-                    }
-                }
-            }
-
             if (tab == 0) {
                 BigCard(
                     title = if (vm.isRecording) "إيقاف التسجيل" else "ابدأ التسجيل",

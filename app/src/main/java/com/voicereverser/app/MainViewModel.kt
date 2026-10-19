@@ -39,7 +39,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var message by mutableStateOf<String?>(null)
         private set
 
-    var challenge by mutableStateOf<String?>(null)
     var noteDraft by mutableStateOf("")
 
     val history = mutableStateListOf<HistoryItem>()
@@ -128,13 +127,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- التشغيل ----------
-    private fun playClips(key: String, clips: List<AudioClip>) {
+    /** يجهّز الصوت بخيط خلفي ثم يشغّله، وما يحجز الواجهة أبداً. */
+    private fun playClips(key: String, build: () -> List<AudioClip>) {
         if (playingKey == key) {
             stopPlayback()
             return
         }
+        stopPlayback()
         playingKey = key
-        player.play(clips) { main.post { playingKey = null } }
+        Thread {
+            val clips = build()
+            main.post {
+                if (playingKey == key) {
+                    if (clips.isEmpty()) {
+                        playingKey = null
+                        say("تعذّر التشغيل")
+                    } else {
+                        startPlayback(key, clips)
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun startPlayback(key: String, clips: List<AudioClip>) {
+        player.play(clips) {
+            main.post { if (playingKey == key) playingKey = null }
+        }
     }
 
     fun stopPlayback() {
@@ -144,12 +163,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun playNormal() {
         val c = current ?: return noClip()
-        playClips("normal", listOf(c))
+        playClips("normal") { listOf(c) }
     }
 
     fun playReversed() {
         val c = current ?: return noClip()
-        playClips("reversed", listOf(c.reversed()))
+        playClips("reversed") { listOf(c.reversed()) }
     }
 
     fun setReference() {
@@ -170,7 +189,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             noClip()
             return
         }
-        playClips("compare", listOf(r, c.reversed()))
+        playClips("compare") { listOf(r, c.reversed()) }
     }
 
     // ---------- المؤثرات ----------
@@ -182,6 +201,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         stopPlayback()
+        playingKey = key
         Thread {
             var out = Effects.apply(c, effect)
             if (alsoReverse) out = out.reversed()
@@ -189,7 +209,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             main.post {
                 lastFx = out
                 lastFxLabel = label
-                playClips(key, listOf(out))
+                if (playingKey == key) startPlayback(key, listOf(out))
             }
         }.start()
     }
@@ -236,20 +256,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- السجل ----------
     fun playItem(item: HistoryItem, reversed: Boolean) {
         val key = "h:" + item.file.name + (if (reversed) ":r" else ":n")
-        if (playingKey == key) {
-            stopPlayback()
-            return
-        }
-        Thread {
+        playClips(key) {
             val clip = WavIO.read(item.file)
-            main.post {
-                if (clip == null) {
-                    say("تعذّر فتح الملف")
-                } else {
-                    playClips(key, listOf(if (reversed) clip.reversed() else clip))
-                }
-            }
-        }.start()
+            if (clip == null) emptyList() else listOf(if (reversed) clip.reversed() else clip)
+        }
     }
 
     fun useItem(item: HistoryItem, asReference: Boolean) {

@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +48,6 @@ private val navItems = listOf(
     NavItem("الصوت", Icons.Filled.GraphicEq),
     NavItem("مؤثرات", Icons.Filled.RecordVoiceOver),
     NavItem("ملاحظات", Icons.Filled.Description),
-    NavItem("ترند", Icons.Filled.Whatshot),
     NavItem("السجل", Icons.Filled.History)
 )
 
@@ -88,7 +86,6 @@ fun App(vm: MainViewModel) {
                 0 -> AudioScreen(vm)
                 1 -> EffectsScreen(vm)
                 2 -> NotesScreen(vm)
-                3 -> TrendingScreen(vm, onTry = { tab = 0 })
                 else -> HistoryScreen(vm)
             }
         }

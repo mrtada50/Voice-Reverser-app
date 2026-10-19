@@ -11,6 +11,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Process
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -101,15 +102,20 @@ class Recorder {
         running = true
         rec.startRecording()
         thread = Thread {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             val buf = ShortArray(minBuf)
             var total = 0L
+            var lastTick = -1000L
             while (running) {
                 val n = rec.read(buf, 0, buf.size)
                 if (n > 0) {
                     synchronized(chunks) { chunks.add(buf.copyOf(n)) }
                     total += n
                     val ms = total * 1000 / sampleRate
-                    onTick(ms)
+                    if (ms - lastTick >= 250) {
+                        lastTick = ms
+                        onTick(ms)
+                    }
                     if (ms >= maxMs) {
                         running = false
                         onAutoStop()
@@ -156,23 +162,26 @@ class Recorder {
     }
 }
 
-/** تشغيل مقاطع بالتسلسل. */
+/** تشغيل مقاطع بالتسلسل (بدون أي انتظار على الخيط الرئيسي). */
 class Player {
-    @Volatile
-    private var stopFlag = false
     @Volatile
     private var gen = 0
     private var thread: Thread? = null
 
     fun play(clips: List<AudioClip>, onDone: () -> Unit) {
-        stop()
-        stopFlag = false
+        gen++
         val myGen = gen
+        val prev = thread
         thread = Thread {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             try {
+                try {
+                    prev?.join()
+                } catch (e: InterruptedException) {
+                }
                 for (clip in clips) {
-                    if (stopFlag) break
-                    playOne(clip)
+                    if (myGen != gen) break
+                    playOne(clip, myGen)
                 }
             } catch (e: Exception) {
             } finally {
@@ -181,20 +190,12 @@ class Player {
         }.also { it.start() }
     }
 
+    /** يوقف فوراً: الخيط القديم ينتهي لحاله. */
     fun stop() {
         gen++
-        stopFlag = true
-        val t = thread
-        if (t != null && t !== Thread.currentThread()) {
-            try {
-                t.join(1500)
-            } catch (e: InterruptedException) {
-            }
-        }
-        thread = null
     }
 
-    private fun playOne(clip: AudioClip) {
+    private fun playOne(clip: AudioClip, myGen: Int) {
         val minBuf = AudioTrack.getMinBufferSize(
             clip.sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
@@ -212,22 +213,22 @@ class Player {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(maxOf(minBuf, 8192))
+            .setBufferSizeInBytes(maxOf(minBuf * 4, 65536))
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         track.play()
         var pos = 0
-        val chunk = 4096
-        while (pos < clip.samples.size && !stopFlag) {
+        val chunk = 8192
+        while (pos < clip.samples.size && myGen == gen) {
             val n = minOf(chunk, clip.samples.size - pos)
             val w = track.write(clip.samples, pos, n)
             if (w <= 0) break
             pos += w
         }
-        if (!stopFlag) {
+        if (myGen == gen) {
             track.stop()
             val deadline = System.currentTimeMillis() + 3000
-            while (!stopFlag &&
+            while (myGen == gen &&
                 track.playbackHeadPosition < clip.samples.size &&
                 System.currentTimeMillis() < deadline
             ) {
